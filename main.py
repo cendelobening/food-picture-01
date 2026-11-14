@@ -13,6 +13,9 @@ it unless it is a PNG or a JPEG within the competition limits (at most
 1 MiB, at most 1024 px on a side). The copy goes through a scratch file
 that is moved into place, so a failed run never leaves a half-written
 image behind, and the finished copy is checked by size and SHA-256.
+The delivered file is made world-readable (mode 0644): the grader
+collects the output as a different user than the one running this
+program, so an owner-only file would be unreadable to it.
 
 Usage: python3 main.py
 Output: $MAKEFUN_OUTPUT_DIR/entry.png (falls back to /output/entry.png)
@@ -119,11 +122,21 @@ def main():
                 if not chunk:
                     break
                 tmp.write(chunk)
+    # NamedTemporaryFile creates the scratch file mode 0600, and
+    # os.replace keeps that mode on the delivered file. The grader
+    # collects /output as a different user than the one running this
+    # program, so an owner-only file is unreadable to it ("entry.png
+    # is not readable"). Make the copy world-readable before it is
+    # moved into place.
+    os.chmod(tmp_path, 0o644)
     try:
         os.replace(tmp_path, target)
     except BaseException:
         tmp_path.unlink(missing_ok=True)
         raise
+    # Belt and braces: the delivered file must stay world-readable
+    # even if the move above ever preserves a different mode.
+    os.chmod(target, 0o644)
 
     actual_size = target.stat().st_size
     actual_hash = sha256_of(target)
